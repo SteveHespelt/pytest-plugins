@@ -1,5 +1,5 @@
 """pytest: avoid already-imported warning: PYTEST_DONT_REWRITE."""
-
+# SJH is used to mark stuff I've added, changed
 from __future__ import absolute_import
 
 import sys
@@ -21,6 +21,16 @@ def clean_filename(s):
     return six.text_type("".join(c if c not in forbidden_chars and ord(c) < 127 else '_'
                                  for c in s))
 
+def get_restriction_value(s) -> str or int or float :
+    r = None
+    try:
+       r = int(s)
+    except ValueError:
+        try:
+            r = float(s)
+        except ValueError:
+            r = s
+    return r
 
 class Profiling(object):
     """Profiling plugin for pytest."""
@@ -32,8 +42,10 @@ class Profiling(object):
     svg_err = None
     dot_cmd = None
     gprof2dot_cmd = None
+    config =None
 
-    def __init__(self, svg, dir=None, element_number=20, stripdirs=False):
+    #sjh add the Config object to ctor args
+    def __init__(self, svg, dir=None, element_number=20, stripdirs=False, config=None):
         self.svg = svg
         self.dir = 'prof' if dir is None else dir[0]
         self.stripdirs = stripdirs
@@ -43,6 +55,17 @@ class Profiling(object):
         if not os.path.isfile(self.gprof2dot):
             # Can't see gprof in the local bin dir, we'll just have to hope it's on the path somewhere
             self.gprof2dot = 'gprof2dot'
+        # SJH - grab pytest ini config props for passing to gprof2dot
+        self.config = config  #SJH might not need this after the ctor is finished
+        self.sort_keys = config.getvalue('profiling_sort_key')
+        self.sort_keys = config.getini('profiling_sort_key') if self.sort_keys is None else ['cumulative']
+        rev_order = config.getini('profiling_rev_order')  # we have a default but we might override in ini
+        val = config.getvalue('profiling_rev_order')
+        self.rev_order = rev_order if val is None else val
+        restrictions = config.getini('profiling_filter')
+        val = config.getvalue('profiling_filter')
+        restrictions = restrictions if val is None else val
+        self.restrictions = [ get_restriction_value(s) for s in restrictions ]
 
     def pytest_sessionstart(self, session):  # @UnusedVariable
         try:
@@ -64,7 +87,8 @@ class Profiling(object):
                 # gprof2dot -f pstats prof/combined.prof | dot -Tsvg -o prof/combined.svg
 
                 # the 2 commands that we wish to execute
-                gprof2dot_args = [self.gprof2dot, "-f", "pstats", self.combined]
+                #SJH - add config profiled args
+                gprof2dot_args = [self.gprof2dot, "-f", "pstats", *self.get_gprof2dot_options(), self.combined]
                 dot_args = ["dot", "-Tsvg", "-o", self.svg_name]
                 self.dot_cmd = " ".join(dot_args)
                 self.gprof2dot_cmd = " ".join(gprof2dot_args)
@@ -91,7 +115,12 @@ class Profiling(object):
             stats = pstats.Stats(self.combined, stream=terminalreporter)
             if self.stripdirs:
               stats.strip_dirs()
-            stats.sort_stats('cumulative').print_stats(self.element_number)
+            if self.rev_order:
+                stats.reverse_order()
+            restrictions = self.restrictions
+            if restrictions is None:
+                restrictions = [self.element_number]
+            stats.sort_stats(*self.sort_keys).print_stats(*restrictions)
         if self.svg_name:
             if not self.svg_err:
                 # 0 - SUCCESS
@@ -133,6 +162,15 @@ class Profiling(object):
             prof.dump_stats(prof_filename)
         self.profs.append(prof_filename)
 
+    def get_gprof2dot_options(self) -> [str] :
+        # chop off the config property prefix
+        d : dict = { x: self.config.inicfg[x] for x in self.config.inicfg if x.startswith('gprof2dot_') }
+        for k in d:
+            val = self.config.getvalue(k)
+            if not val is None: # override from command line
+                d[k] = val
+        r: [] = ['--' + x[10:]+'='+d[x].strip() for x in d if x.startswith('gprof2dot_')]
+        return r
 
 def pytest_addoption(parser):
     """pytest_addoption hook for profiling plugin"""
@@ -146,14 +184,87 @@ def pytest_addoption(parser):
     group.addoption("--element-number", action="store", type="int", default=20,
                     help="defines how many elements will display in a result")
     group.addoption("--strip-dirs", action="store_true",
-                    help="configure to show/hide the leading path information from file names")
+                    help="configure to show/hide the leading path information "
+                    "from file names")
+    parser.addini("strip_dirs", help="configure to show/hide the leading path information "
+                    "from file names", type="bool")
+    #SJH restriction args for use by pstats methods when doing terminal print
+    #   multiple entries (multi-line ini or > 1 CLI arg
+    group.addoption("--profiling-sort-key", action="append", type=str,
+                     choices=['cumulative', 'calls', 'cumtime', 'file',
+                              'filename', 'module', 'ncalls', 'pcalls',
+                              'line', 'name', 'nfl', 'stdname', 'time',
+                              'tottime'],
+                     default=None, help="ordered list of keys " # None because our ini has our default 
+                     "provided to pstats.sort_stats method")
+    parser.addini("profiling_sort_key", help="ordered list of keys "
+                 "provided to pstats.sort_stats method",
+                 type="linelist", default=["cumulative"] )
+    group.addoption("--profiling-rev-order", action="store_true",
+                    default=None,  # if no command line, as our ini has a default
+                    help="if specified, pstats.reverse_order() utilized")
+    parser.addini("profiling_rev_order", help="if specified, "
+                 "pstats.reverse_order() utilized", type="bool", default=False )
+    # these are the restrictions that various pstats methods can utilize
+    # no point using a custom type conversion function as the pstats restrictions can be strings, ints, floats here
+    # as there isn't one for the addini(), we will use it when we grab the values.
+    group.addoption("--profiling-filter", action="append",
+                     type=str, default=None, help="pstats restriction values")
+    parser.addini("profiling_filter", help="pstats restriction values",
+                     type="linelist", default=[] )
+
+    
+    #SJH new grprof2dot options - as we are passing these through to the gprof2dot command, we treat all such
+    # options as strings - let gprof2dot parse as needed.
+    group.addoption("--gprof2dot-node-thres", action="store", type=float,
+                     default=None, help="eliminate nodes below this threshold")
+    parser.addini("gprof2dot_node_thres", help="eliminate nodes below this "
+                 "threshold", type="string", default="0.5")
+    group.addoption("--gprof2dot-edge-thres", action="store", type=float,
+                     default=None, help="eliminate edges below this threshold")
+    parser.addini("gprof2dot_edge_thres", help="eliminate nodesedges below this "
+                 "threshold", type="string", default="0.1")
+    group.addoption("--gprof2dot-skew", action="store", type=float,
+                     default=None, help="skew the colorization curve.  Values "
+                     "< 1.0 give more\nvariety to lower percentages.  Values "
+                     "> 1.0 give less\nvariety to lower percentages")
+    parser.addini("gprof2dot_skew", help="skew the colorization curve.  Values "
+                 "< 1.0 give more\nvariety to lower percentages.  Values "
+                 "> 1.0 give less\nvariety to lower percentages",
+                 type="string", default="1.0" )
+    group.addoption("--gprof2dot-colormap", action="store", type=str,
+                     default=None,
+                     choices=['color', 'pink', 'gray', 'bw', 'print'],
+                     help="color map: color, pink, gray, bw, or print" )
+    parser.addini("gprof2dot_colormap", help="color map: color, pink, gray, "
+                 "bw, or print", type="string", default="color" )
+    group.addoption("--gprof2dot-root", action="store", type=str,
+                     default=None, help="prune call graph to show only "
+                    "descendants of specified root function")
+    parser.addini("gprof2dot_root", help="prune call graph to show only "
+                 "descendants of specified root function",
+                 type="string", default=None )
+    group.addoption("--gprof2dot-leaf", action="store", type=str,
+                     default=None, help="prune call graph to show only "
+                     "ancestors of specified leaf function")
+    parser.addini("gprof2dot_leaf", help="prune call graph to show only "
+                 "ancestors of specified leaf function",
+                 type="string", default=None )
 
 
 def pytest_configure(config):
     """pytest_configure hook for profiling plugin"""
     profile_enable = any(config.getvalue(x) for x in ('profile', 'profile_svg'))
     if profile_enable:
+        val = config.getvalue('strip_dirs')
+        stripdirs = config.getini('strip_dirs') if val is None else val
+
         config.pluginmanager.register(Profiling(config.getvalue('profile_svg'),
                                                 config.getvalue('pstats_dir'),
                                                 element_number=config.getvalue('element_number'),
-                                                stripdirs=config.getvalue('strip_dirs')))
+                                                stripdirs=stripdirs,
+                                                config=config)) #SJH
+        #SJH - is this right?  the plugin has to explicitly look at both the argv AND ini collectons via
+        # getvalue(), getini() ? Shouldn't the Config object encapsulate what actual source is used??
+
+    
