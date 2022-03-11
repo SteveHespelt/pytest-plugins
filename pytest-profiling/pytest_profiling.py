@@ -26,13 +26,18 @@ def get_gprof2dot_options(config) -> [str] :
     prefix = 'gprof2dot_'
     arg = '--' + prefix[:len(prefix)-1] + '-'
     d : dict = { x: config.inicfg[x] for x in config.inicfg if x.startswith(prefix) }
-    for k in config.invocation_params.args:   # command properties
-        if k.startswith(arg):  # have to specify CLI form
+    for a in config.invocation_params.args:   # command properties
+        if a.startswith(arg):  # have to specify CLI form
             # ugh - no iterable list of CLI provided config property names so...
-            p = k[:k.find('=')].replace('--','').replace('-','_')
-            val = config.getvalue(p)
-            d[p] = val
-    r: [] = ['--' + x[len(prefix):]+'=' + d[x].strip() for x in d if x.startswith(prefix)]
+            pos = a.find('=')
+            pos = len(a) if pos == -1 else pos
+            k = a[:pos].replace('--','').replace('-','_') # convert to addoption formatted prop name
+            val = config.getvalue(k)
+            d[k] = val
+    # not ideal, but all of the gprof2dot options use hyphens, no underscores so we get away with this.
+    r: [] = ['--' + x[len(prefix):].replace('_', '-')+ \
+             ('' if d[x] is None else '=' + d[x].strip()) \
+             for x in d if x.startswith(prefix)]
     return r
 
 def get_restriction_value(s) -> str or int or float :
@@ -61,11 +66,11 @@ class Profiling(object):
     combined = None
     svg_err = None
     dot_cmd = None
-    # reasonable defaults if we don't use the Config reference
+    # reasonable defaults if we don't use the Config reference - match up with what addini specifies
     gprof2dot_cmd = None
-    sort_keys = []
+    sort_keys = ['cumulative']
     rev_order = False
-    restrictions = None
+    restrictions = []
     gprof2dot_options = []
     profiling_mode = 'stats'
 
@@ -81,16 +86,20 @@ class Profiling(object):
             # Can't see gprof in the local bin dir, we'll just have to hope it's on the path somewhere
             self.gprof2dot = 'gprof2dot'
         if config is not None:
-            self.sort_keys = config.getvalue('profiling_sort_key')
-            self.sort_keys = config.getini('profiling_sort_key') if self.sort_keys is None else ['cumulative']
+            sort_keys = config.getvalue('profiling_sort_key')
+            sort_keys = config.getini('profiling_sort_key') if sort_keys is None else sort_keys
+            self.sort_keys = sort_keys if sort_keys is not None else self.sort_keys
             val = config.getvalue('profiling_rev_order')
-            self.rev_order = config.getini('profiling_rev_order') if val is None else val
+            val = config.getini('profiling_rev_order') if val is None else val
+            self.rev_order = val if val is not None else self.rev_order
             val = config.getvalue('profiling_filter')
             restrictions = config.getini('profiling_filter') if val is None else val
+            restrictions = self.restrictions if restrictions is None else restrictions
             self.restrictions = [ get_restriction_value(s) for s in restrictions ]
             self.gprof2dot_options = get_gprof2dot_options(config)
             mode = config.getvalue('profiling_mode')
-            self.profiling_mode = config.getini('profiling_mode') if mode is None else mode
+            mode = config.getini('profiling_mode') if mode is None else mode
+            self.profiling_mode = mode if mode is not None else self.profiling_mode
 
     def pytest_sessionstart(self, session):  # @UnusedVariable
         try:
@@ -217,11 +226,11 @@ def pytest_addoption(parser):
                     help="configure the dump directory of profile data files")
     group.addoption("--element-number", action="store", type="int", default=20,
                     help="defines how many elements will display in a result")
-    group.addoption("--strip-dirs", action="store_true", default=False,
+    group.addoption("--strip-dirs", action="store_true", default=None,
                     help="configure to show/hide the leading path information "
                     "from file names")
     parser.addini("strip_dirs", help="configure to show/hide the leading path information "
-                    "from file names", type="bool", default=None)
+                    "from file names", type="bool", default=False)
     #SJH restriction args for use by pstats methods when doing terminal print
     #   multiple entries (multi-line ini or > 1 CLI arg
     group.addoption("--profiling-mode", type=str, choices=['stats', 'callers', 'callees'],default=None,
@@ -250,9 +259,10 @@ def pytest_addoption(parser):
     parser.addini("profiling_filter", help="pstats restriction values",
                      type="linelist", default=[] )
 
-    
-    #SJH new grprof2dot options - as we are passing these through to the gprof2dot command, we treat all such
+    # new grprof2dot options - as we are passing these through to the gprof2dot command, we treat all such
     # options as strings - let gprof2dot parse as needed.
+    # if there are any options that do not take a value (ie. the presence of the option itself is a bool) you MUST
+    # specify the default as None so the correct format is conveyed to the generated command line
     group.addoption("--gprof2dot-node-thres", action="store", type=float,
                      default=None, help="eliminate nodes below this threshold")
     parser.addini("gprof2dot_node_thres", help="eliminate nodes below this "
@@ -293,9 +303,9 @@ def pytest_configure(config):
     """pytest_configure hook for profiling plugin"""
     profile_enable = any(config.getvalue(x) for x in ('profile', 'profile_svg'))
     if profile_enable:
-        val = config.getini('strip_dirs')
-        stripdirs = config.getvalue('strip_dirs') if val is None else val
-
+        val = config.getvalue('strip_dirs')
+        stripdirs = config.getini('strip_dirs') if val is None else val
+        stripdirs = False if stripdirs is None else stripdirs
         config.pluginmanager.register(Profiling(config.getvalue('profile_svg'),
                                                 config.getvalue('pstats_dir'),
                                                 element_number=config.getvalue('element_number'),
