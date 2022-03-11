@@ -132,12 +132,17 @@ The analysis of the profiling data is done via usage of the
 This usage can be configured via a couple of config properties specified either
 on the pytest command line or via the usual ini/cfg config files.
 
-- --profiling-sort-key 1 or more instances of this option will result in the values making up
+- --profiling-mode={stats, callers, callees}; default is 'stats'. Specifies which of the pstats.Stats's
+print_stats(), print_callers(), print_callees() is utilized. Any provided _restrictions_ are used by each
+of these print_ functions. Any value other than 'callers' or 'callees' will be treated as 'stats'.
+- --profiling-sort-key=_{valid-sort-string}_ 1 or more instances of this option will result in the values making up
 an ordered list of sort keys being provided to the Stats.sort_stats() method. In the ini
 configuration, specify the list via a "linelist" property. The default is "cumulative".
+The list of valid values is listed in the
+[sort_stats](https://docs.python.org/3/library/profile.html#pstats.Stats.sort_stats) table.
 - --profiling-rev-order This option causes the ordering of the specified sort keys to be
 reversed, based on the sort keys specified.
-- --profiling-filter - 1 or more of this builds up a ordered list of _restrictions_ as defined in the
+- --profiling-filter=_restriction-value_ - 1 or more of this builds up a ordered list of _restrictions_ as defined in the
 description of the [Stats.print_stats()](https://docs.python.org/3/library/profile.html#pstats.Stats.print_stats) method.
 Note that the values provided to the --profiling-filter option will be converted to a float or
 int or str for usage as documented.

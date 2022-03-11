@@ -21,6 +21,20 @@ def clean_filename(s):
     return six.text_type("".join(c if c not in forbidden_chars and ord(c) < 127 else '_'
                                  for c in s))
 
+def get_gprof2dot_options(config) -> [str] :
+    # chop off the config property prefix
+    prefix = 'gprof2dot_'
+    arg = '--' + prefix[:len(prefix)-1] + '-'
+    d : dict = { x: config.inicfg[x] for x in config.inicfg if x.startswith(prefix) }
+    for k in config.invocation_params.args:   # command properties
+        if k.startswith(arg):  # have to specify CLI form
+            # ugh - no iterable list of CLI provided config property names so...
+            p = k[:k.find('=')].replace('--','').replace('-','_')
+            val = config.getvalue(p)
+            d[p] = val
+    r: [] = ['--' + x[len(prefix):]+'=' + d[x].strip() for x in d if x.startswith(prefix)]
+    return r
+
 def get_restriction_value(s) -> str or int or float :
     r = None
     try:
@@ -32,6 +46,12 @@ def get_restriction_value(s) -> str or int or float :
             r = s
     return r
 
+def has_option( opt: str, opt_list: [] ) -> bool :
+    for p in opt_list:
+        if p.startswith( opt ):
+            return True
+    return False
+
 class Profiling(object):
     """Profiling plugin for pytest."""
     svg = False
@@ -41,13 +61,18 @@ class Profiling(object):
     combined = None
     svg_err = None
     dot_cmd = None
+    # reasonable defaults if we don't use the Config reference
     gprof2dot_cmd = None
-    config =None
+    sort_keys = []
+    rev_order = False
+    restrictions = None
+    gprof2dot_options = []
+    profiling_mode = 'stats'
 
     #sjh add the Config object to ctor args
-    def __init__(self, svg, dir=None, element_number=20, stripdirs=False, config=None):
+    def __init__(self, svg: bool, dir=None, element_number=20, stripdirs=False, config: pytest.Config =None):
         self.svg = svg
-        self.dir = 'prof' if dir is None else dir[0]
+        self.dir = 'prof' if dir is None else dir[0]  # nargs=1 on the group.addoption() call -> a list if present, else None
         self.stripdirs = stripdirs
         self.element_number = element_number
         self.profs = []
@@ -55,17 +80,17 @@ class Profiling(object):
         if not os.path.isfile(self.gprof2dot):
             # Can't see gprof in the local bin dir, we'll just have to hope it's on the path somewhere
             self.gprof2dot = 'gprof2dot'
-        # SJH - grab pytest ini config props for passing to gprof2dot
-        self.config = config  #SJH might not need this after the ctor is finished
-        self.sort_keys = config.getvalue('profiling_sort_key')
-        self.sort_keys = config.getini('profiling_sort_key') if self.sort_keys is None else ['cumulative']
-        rev_order = config.getini('profiling_rev_order')  # we have a default but we might override in ini
-        val = config.getvalue('profiling_rev_order')
-        self.rev_order = rev_order if val is None else val
-        restrictions = config.getini('profiling_filter')
-        val = config.getvalue('profiling_filter')
-        restrictions = restrictions if val is None else val
-        self.restrictions = [ get_restriction_value(s) for s in restrictions ]
+        if config is not None:
+            self.sort_keys = config.getvalue('profiling_sort_key')
+            self.sort_keys = config.getini('profiling_sort_key') if self.sort_keys is None else ['cumulative']
+            val = config.getvalue('profiling_rev_order')
+            self.rev_order = config.getini('profiling_rev_order') if val is None else val
+            val = config.getvalue('profiling_filter')
+            restrictions = config.getini('profiling_filter') if val is None else val
+            self.restrictions = [ get_restriction_value(s) for s in restrictions ]
+            self.gprof2dot_options = get_gprof2dot_options(config)
+            mode = config.getvalue('profiling_mode')
+            self.profiling_mode = config.getini('profiling_mode') if mode is None else mode
 
     def pytest_sessionstart(self, session):  # @UnusedVariable
         try:
@@ -88,7 +113,7 @@ class Profiling(object):
 
                 # the 2 commands that we wish to execute
                 #SJH - add config profiled args
-                gprof2dot_args = [self.gprof2dot, "-f", "pstats", *self.get_gprof2dot_options(), self.combined]
+                gprof2dot_args = [self.gprof2dot, "-f", "pstats", *self.gprof2dot_options, self.combined]
                 dot_args = ["dot", "-Tsvg", "-o", self.svg_name]
                 self.dot_cmd = " ".join(dot_args)
                 self.gprof2dot_cmd = " ".join(gprof2dot_args)
@@ -116,11 +141,16 @@ class Profiling(object):
             if self.stripdirs:
               stats.strip_dirs()
             if self.rev_order:
-                stats.reverse_order()
+                stats = stats.reverse_order()
             restrictions = self.restrictions
             if restrictions is None:
                 restrictions = [self.element_number]
-            stats.sort_stats(*self.sort_keys).print_stats(*restrictions)
+            if self.profiling_mode == 'callers':
+                stats.sort_stats(*self.sort_keys).print_callees(*restrictions)
+            elif self.profiling_mode == 'callees':
+                stats.sort_stats(*self.sort_keys).print_callers(*restrictions)
+            else:
+                stats.sort_stats(*self.sort_keys).print_stats(*restrictions)
         if self.svg_name:
             if not self.svg_err:
                 # 0 - SUCCESS
@@ -164,12 +194,16 @@ class Profiling(object):
 
     def get_gprof2dot_options(self) -> [str] :
         # chop off the config property prefix
-        d : dict = { x: self.config.inicfg[x] for x in self.config.inicfg if x.startswith('gprof2dot_') }
-        for k in d:
-            val = self.config.getvalue(k)
-            if not val is None: # override from command line
-                d[k] = val
-        r: [] = ['--' + x[10:]+'='+d[x].strip() for x in d if x.startswith('gprof2dot_')]
+        prefix = 'gprof2dot_'
+        arg = '--' + prefix[:len(prefix)-1] + '-'
+        d : dict = { x: self.config.inicfg[x] for x in self.config.inicfg if x.startswith(prefix) }
+        for k in self.config.invocation_params.args:   # command properties
+            if k.startswith(arg):  # have to specify CLI form
+                # ugh - no iterable list of CLI provided config property names so...
+                p = k[:k.find('=')].replace('--','').replace('-','_')
+                val = self.config.getvalue(p)
+                d[p] = val
+        r: [] = ['--' + x[len(prefix):]+'=' + d[x].strip() for x in d if x.startswith(prefix)]
         return r
 
 def pytest_addoption(parser):
@@ -179,17 +213,20 @@ def pytest_addoption(parser):
                     help="generate profiling information")
     group.addoption("--profile-svg", action="store_true",
                     help="generate profiling graph (using gprof2dot and dot -Tsvg)")
-    group.addoption("--pstats-dir", nargs=1,
+    group.addoption("--pstats-dir", nargs=1,  # TODO:  why nargs=1 -> a list returned by getvalue()
                     help="configure the dump directory of profile data files")
     group.addoption("--element-number", action="store", type="int", default=20,
                     help="defines how many elements will display in a result")
-    group.addoption("--strip-dirs", action="store_true",
+    group.addoption("--strip-dirs", action="store_true", default=False,
                     help="configure to show/hide the leading path information "
                     "from file names")
     parser.addini("strip_dirs", help="configure to show/hide the leading path information "
-                    "from file names", type="bool")
+                    "from file names", type="bool", default=None)
     #SJH restriction args for use by pstats methods when doing terminal print
     #   multiple entries (multi-line ini or > 1 CLI arg
+    group.addoption("--profiling-mode", type=str, choices=['stats', 'callers', 'callees'],default=None,
+                    help="which Stats.print_? function to use")
+    parser.addini("profiling_mode", help="which Stats.print_? function to use", default='stats' )
     group.addoption("--profiling-sort-key", action="append", type=str,
                      choices=['cumulative', 'calls', 'cumtime', 'file',
                               'filename', 'module', 'ncalls', 'pcalls',
@@ -256,8 +293,8 @@ def pytest_configure(config):
     """pytest_configure hook for profiling plugin"""
     profile_enable = any(config.getvalue(x) for x in ('profile', 'profile_svg'))
     if profile_enable:
-        val = config.getvalue('strip_dirs')
-        stripdirs = config.getini('strip_dirs') if val is None else val
+        val = config.getini('strip_dirs')
+        stripdirs = config.getvalue('strip_dirs') if val is None else val
 
         config.pluginmanager.register(Profiling(config.getvalue('profile_svg'),
                                                 config.getvalue('pstats_dir'),
