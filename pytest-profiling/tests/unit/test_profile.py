@@ -111,7 +111,7 @@ def test_get_gprof2dot_options_cli3():
     config = Mock()
     config.inicfg = {}  # only passing config properties via CLI
     config.invocation_params.args = ['--gprof2dot-use-it', '--other-property=val1', '--gprof2dot-root=root_func']
-    config.getvalue = lambda s: 'root_func' if s == 'gprof2dot_root' else None  # based on the args list
+    config.getvalue = lambda s: {'gprof2dot_root':'root_func', 'gprof2dot_use_it':None}.get(s, None)
     r = get_gprof2dot_options(config)
     assert len(r) == 2
     assert r[0] == '--use-it'

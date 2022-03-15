@@ -51,11 +51,6 @@ def get_restriction_value(s) -> str or int or float :
             r = s
     return r
 
-def has_option( opt: str, opt_list: [] ) -> bool :
-    for p in opt_list:
-        if p.startswith( opt ):
-            return True
-    return False
 
 class Profiling(object):
     """Profiling plugin for pytest."""
@@ -122,22 +117,33 @@ class Profiling(object):
 
                 # the 2 commands that we wish to execute
                 #SJH - add config profiled args
-                gprof2dot_args = [self.gprof2dot, "-f", "pstats", *self.gprof2dot_options, self.combined]
+                #gprof2dot_args = [self.gprof2dot, "-f", "pstats", *self.gprof2dot_options, self.combined]
+                gprof2dot_args = [sys.executable, '-m', 'gprof2dot', "-f", "pstats", *self.gprof2dot_options, self.combined]
                 dot_args = ["dot", "-Tsvg", "-o", self.svg_name]
                 self.dot_cmd = " ".join(dot_args)
                 self.gprof2dot_cmd = " ".join(gprof2dot_args)
 
+                #SJH - since we cannot attach the Pycharm debugger to a shell subprocess, let's do this pipeline by
+                # running the gprof2dot module first, then the dot  command.
+
                 # A handcrafted Popen pipe actually seems to work on both windows and unix:
                 # do it in 2 subprocesses, with a pipe in between
-                pdot = Popen(dot_args, stdin=PIPE, shell=True)
-                pgprof = Popen(gprof2dot_args, stdout=pdot.stdin, shell=True)
+                # SJH - cannot follow into child processes when debugging in Pycharm CE
+                # so lots of print statements...
+                print(' grpof2dot pipe CWD is ' + os.getcwd(), file=sys.stderr )
+                pdot = Popen(dot_args, stdin=PIPE, stdout=None, stderr=None, shell=False)
+                pgprof = Popen(gprof2dot_args, stdout=pdot.stdin, stderr=None, shell=False)
                 (stdoutdata1, stderrdata1) = pgprof.communicate()
                 (stdoutdata2, stderrdata2) = pdot.communicate()
                 if stderrdata1 is not None or pgprof.poll() > 0:
                     # error: gprof2dot
+                    print('gprof2dot error: ' + str(stderrdata1), file=sys.stderr )
+                    print('gprof2dot stdout: ' + str(stdoutdata1), file=sys.stderr )
                     self.svg_err = 1
                 elif stderrdata2 is not None or pdot.poll() > 0:
                     # error: dot
+                    print('dot error: ' + str(stderrdata2), file=sys.stderr )
+                    print('dot stdout: ' + str(stderrdata1), file=sys.stderr )
                     self.svg_err = 2
                 else:
                     # success
@@ -200,20 +206,6 @@ class Profiling(object):
             prof_filename = os.path.join(self.dir, hash_str + ".prof")
             prof.dump_stats(prof_filename)
         self.profs.append(prof_filename)
-
-    def get_gprof2dot_options(self) -> [str] :
-        # chop off the config property prefix
-        prefix = 'gprof2dot_'
-        arg = '--' + prefix[:len(prefix)-1] + '-'
-        d : dict = { x: self.config.inicfg[x] for x in self.config.inicfg if x.startswith(prefix) }
-        for k in self.config.invocation_params.args:   # command properties
-            if k.startswith(arg):  # have to specify CLI form
-                # ugh - no iterable list of CLI provided config property names so...
-                p = k[:k.find('=')].replace('--','').replace('-','_')
-                val = self.config.getvalue(p)
-                d[p] = val
-        r: [] = ['--' + x[len(prefix):]+'=' + d[x].strip() for x in d if x.startswith(prefix)]
-        return r
 
 def pytest_addoption(parser):
     """pytest_addoption hook for profiling plugin"""

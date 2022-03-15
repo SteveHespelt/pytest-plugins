@@ -118,7 +118,7 @@ class VirtualEnv(Workspace):
             self.python = self.virtualenv / 'bin' / 'python'
             self.easy_install = self.virtualenv / "bin" / "easy_install"
             self.coverage = self.virtualenv / 'bin' / 'coverage'
-
+        self.easy_install = self._update_installer()
         if env is None:
             self.env = dict(os.environ)
         else:
@@ -182,28 +182,26 @@ class VirtualEnv(Workspace):
 
         installed = [
             dist for dist in metadata.distributions() if dist.name == pkg_name]
-        if not installed or location(installed[0]).endswith('.egg'):
-            if sys.platform == 'win32':
-                # In virtualenv on windows "Scripts" folder is used instead of "bin".
-                installer = str(self.virtualenv / 'Scripts' / installer + '.exe')
-            else:
-                installer = str(self.virtualenv / 'bin' / installer)
+        extra_args = { 'capture': False }
+        easy_install = self._update_installer(installer)
+        if not installed or str(location(installed[0])).endswith('.egg'):
             if not self.debug:
-                installer += ' -q'
+                easy_install += ' -q'
             # Note we're running this as 'python easy_install foobar', instead of 'easy_install foobar'
             # This is to circumvent #! line length limits :(
-            cmd = '%s %s %s' % (self.python, installer, pkg_name)
+            cmd = '%s %s %s' % (self.python, easy_install, pkg_name)
         else:
             dist = installed[0]
             d = {'python': self.python,
-                 'easy_install': self.easy_install,
-                 'src_dir': location(dist),
+                 'easy_install': easy_install,
+                 # because the cd arg is not supplied to the Workspace.run method, the workspace is used as the CWD
+                 # and the generated cmd string uses cd . ; <- need to get the absolute path
+                 'src_dir': os.path.abspath(location(dist)),
                  'name': dist.name,
                  'version': dist.version,
                  'pyversion': '{sys.version_info[0]}.{sys.version_info[1]}'
                  .format(**globals()),
                  }
-
             d['egg_file'] = Path(location(dist)) / 'dist' / ('%(name)s-%(version)s-py%(pyversion)s.egg' % d)
             if build_egg and not d['egg_file'].isfile():
                 self.run('cd %(src_dir)s; %(python)s setup.py -q bdist_egg' % d, capture=True)
@@ -211,9 +209,15 @@ class VirtualEnv(Workspace):
             if build_egg or (build_egg is None and d['egg_file'].isfile()):
                 cmd = '%(python)s %(easy_install)s %(egg_file)s' % d
             else:
-                cmd = 'cd %(src_dir)s; %(python)s setup.py -q develop' % d
+                if (Path(d['src_dir']) / 'setup.py').isfile():
+                    cmd = 'cd %(src_dir)s; %(python)s setup.py -q develop' % d
+                    extra_args['capture'] = True
+                else:  # TODO: what other choices are there?
+                    installer = { 'pip':'-m ' + installer,
+                                  'easy_install':installer }.get(installer.split()[0], installer)
+                    cmd = '{0} {1} {2}'.format( d['python'], installer, d['name'] )
 
-        self.run(cmd, capture=False)
+        self.run(cmd, **extra_args)
 
     def installed_packages(self, package_type=None):
         """
@@ -233,3 +237,11 @@ class VirtualEnv(Workspace):
             name, version, location = line.split()
             res[name] = PackageEntry(name, version, location)
         return res
+
+    def _update_installer(self, installer='easy_install'):
+        if sys.platform == 'win32':
+            # In virtualenv on windows "Scripts" folder is used instead of "bin".
+            return self.virtualenv / 'Scripts' / installer + '.exe'
+        else:
+            return self.virtualenv / "bin" / installer
+

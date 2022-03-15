@@ -1,152 +1,74 @@
-# Pytest Profiling Plugin
+# A goody-bag of nifty plugins for [pytest](https://pytest.org)
 
-Profiling plugin for pytest, with tabular and heat graph output.
+OS | Build | Coverage |
+ ------  | ----- | -------- |
+ ![Linux](img/linux.png) | [![CircleCI (Linux)](https://circleci.com/gh/man-group/pytest-plugins/tree/master.svg?style=svg)](https://circleci.com/gh/man-group/pytest-plugins/tree/master) | [![Coverage Status](https://coveralls.io/repos/github/manahl/pytest-plugins/badge.svg?branch=master)](https://coveralls.io/github/manahl/pytest-plugins?branch=master)
+ ![Windows](img/windows.png) | [![Travic CI (Windows)](https://travis-ci.org/man-group/pytest-plugins.svg?branch=master)](https://travis-ci.org/man-group/pytest-plugins) |
 
-Tests are profiled with [cProfile](http://docs.python.org/library/profile.html#module-cProfile) and analysed with [pstats](http://docs.python.org/library/profile.html#pstats.Stats); heat graphs are
-generated using [gprof2dot](https://github.com/jrfonseca/gprof2dot) and [dot](http://www.graphviz.org/).
+Plugin | Description | Supported OS |
+------ | ----------- | ------------ |
+| [pytest-server-fixtures](pytest-server-fixtures) |  Extensible server-running framework with a suite of well-known databases and webservices included | ![Linux](img/linux.png)
+| [pytest-shutil](pytest-shutil) | Unix shell and environment management tools |![Linux](img/linux.png)
+| [pytest-profiling](pytest-profiling) | Profiling plugin with tabular heat graph output and gprof support for C-Extensions |![Linux](img/linux.png)
+| [pytest-devpi-server](pytest-devpi-server) | DevPI server fixture |![Linux](img/linux.png)
+| [pytest-pyramid-server](pytest-pyramid-server) | Pyramid server fixture |![Linux](img/linux.png)
+| [pytest-webdriver](pytest-webdriver) | Selenium webdriver fixture |![Linux](img/linux.png)
+| [pytest-virtualenv](pytest-virtualenv) | Virtualenv fixture |![Linux](img/linux.png) ![Windows](img/windows.png)
+| [pytest-qt-app](pytest-qt-app) | PyQT application fixture |![Linux](img/linux.png)
+| [pytest-listener](pytest-listener)  | TCP Listener/Reciever for testing remote systems |![Linux](img/linux.png) ![Windows](img/windows.png)
+| [pytest-git](pytest-git) | Git repository fixture |![Linux](img/linux.png) ![Windows](img/windows.png)
+| [pytest-svn](pytest-svn) | SVN repository fixture |![Linux](img/linux.png)
+| [pytest-fixture-config](pytest-fixture-config) | Configuration tools for Py.test fixtures |![Linux](img/linux.png) ![Windows](img/windows.png)
+| [pytest-verbose-parametrize](pytest-verbose-parametrize) | Makes py.test's parametrize output a little more verbose |![Linux](img/linux.png)
 
-![](https://cdn.rawgit.com/manahl/pytest-plugins/master/pytest-profiling/docs/static/profile_combined.svg)
 
+## Developing these plugins
 
-## Installation
+All of these plugins share setup code and configuration so there is a top-level Makefile to
+automate process of setting them up for test and development.
 
-Install using your favourite package installer:
-```bash
-    pip install pytest-profiling
-    # or
-    easy_install pytest-profiling
-```
+### Pre-requisites
 
-Enable the fixture explicitly in your tests or conftest.py (not required when using setuptools entry points):
+You have `python` installed on your path, preferably using a `virtualenv`
 
-```python
-    pytest_plugins = ['pytest_profiling']
-```
+### Makefile targets
 
-## Usage
-
-Once installed, the plugin provides extra options to pytest:
-
-```bash
-    $ py.test --help
-    ...
-      Profiling:
-        --profile           generate profiling information
-        --profile-svg       generate profiling graph (using gprof2dot and dot
-                            -Tsvg)
-```
-
-The ``--profile`` and ``profile-svg`` options can be combined with any other option:
-
+To install all dependencies and set up all of the packages for development simply run:
 
 ```bash
-    $ py.test tests/unit/test_logging.py --profile
-    ============================= test session starts ==============================
-    platform linux2 -- Python 2.6.2 -- pytest-2.2.3
-    collected 3 items
-
-    tests/unit/test_logging.py ...
-    Profiling (from prof/combined.prof):
-    Fri Oct 26 11:05:00 2012    prof/combined.prof
-
-             289 function calls (278 primitive calls) in 0.001 CPU seconds
-
-       Ordered by: cumulative time
-       List reduced from 61 to 20 due to restriction <20>
-
-       ncalls  tottime  percall  cumtime  percall filename:lineno(function)
-            3    0.000    0.000    0.001    0.000 <string>:1(<module>)
-          6/3    0.000    0.000    0.001    0.000 core.py:344(execute)
-            3    0.000    0.000    0.001    0.000 python.py:63(pytest_pyfunc_call)
-            1    0.000    0.000    0.001    0.001 test_logging.py:34(test_flushing)
-            1    0.000    0.000    0.000    0.000 _startup.py:23(_flush)
-            2    0.000    0.000    0.000    0.000 mock.py:979(__call__)
-            2    0.000    0.000    0.000    0.000 mock.py:986(_mock_call)
-            4    0.000    0.000    0.000    0.000 mock.py:923(_get_child_mock)
-            6    0.000    0.000    0.000    0.000 mock.py:512(__new__)
-            2    0.000    0.000    0.000    0.000 mock.py:601(__get_return_value)
-            4    0.000    0.000    0.000    0.000 mock.py:695(__getattr__)
-            6    0.000    0.000    0.000    0.000 mock.py:961(__init__)
-        22/14    0.000    0.000    0.000    0.000 mock.py:794(__setattr__)
-            6    0.000    0.000    0.000    0.000 core.py:356(getkwargs)
-            6    0.000    0.000    0.000    0.000 mock.py:521(__init__)
-            3    0.000    0.000    0.000    0.000 skipping.py:122(pytest_pyfunc_call)
-            6    0.000    0.000    0.000    0.000 core.py:366(varnames)
-            3    0.000    0.000    0.000    0.000 skipping.py:125(check_xfail_no_run)
-            2    0.000    0.000    0.000    0.000 mock.py:866(assert_called_once_with)
-            6    0.000    0.000    0.000    0.000 mock.py:645(__set_side_effect)
-
-
-    =========================== 3 passed in 0.13 seconds ===========================
+    make develop
 ```
 
-`pstats` files (one per test item) are retained for later analysis in `prof` directory, along with a `combined.prof` file:
+To install all the packages as wheel distributions:
 
 ```bash
-    $ ls -1 prof/
-    combined.prof
-    test_app.prof
-    test_flushing.prof
-    test_import.prof
+    make install
 ```
 
-By default the `pstats` files are named after their corresponding test name, with illegal filesystem characters replaced by underscores.
-If the full path is longer that operating system allows then it will be renamed to first 4 bytes of an md5 hash of the test name:
+To run all the tests:
 
 ```bash
-    $ ls -1 prof/
-    combined.prof
-    test_not_longer_than_max_allowed.prof
-    68b329da.prof
+    make test
 ```
 
-If the ``--profile-svg`` option is given, along with the prof files and tabular output a svg file will be generated:
+To setup test environment in Vagrant (requires virtualbox):
 
 ```bash
-    $ py.test tests/unit/test_logging.py --profile-svg
-    ...
-    SVG profile in prof/combined.svg.
+    $ vagrant up
+    $ vagrant ssh
+
+    # ..... inside vagrant ....
+    . venv/bin/activate
+    make develop
+    make test
 ```
 
-This is best viewed with a good svg viewer e.g. Chrome.
+## `foreach.sh`
 
-A number of [gprof2dot](https://github.com/jrfonseca/gprof2dot) options can be provided by either command line options to pytest or in any of the pytest ini
-files. Any option that has a name with the _gprof2dot__ prefix is conveyed to gprof2dot after removing that prefix.
-Because this plugin uses the gprof2dot _-f pstats_ option, at this time only the following
-gprof2dot options are passed through by this plugin:
-- \-\-gprof2dot-node-thres
-- \-\-gprof2dot-edge-thres
-- \-\-gprof2dot-skew
-- \-\-gprof2dot-colormap
-- \-\-gprof2dot-root
-- \-\-gprof2dot-leaf
+To run a command in each of the package directories, use the `foreach.sh` script.
+This example will build all the wheel distributions:
 
-Note that if a function name is provided to either the --root or --leaf options and this
-function symbol is not found in the combined.prof file, gprof2dot will
-pipe an empty stream to dot.
-
-### Plugin Options Affecting pstats.Stats
-
-The analysis of the profiling data is done via usage of the
-[profile.Stats](https://docs.python.org/3/library/profile.html#the-stats-class) class.
-This usage can be configured via a couple of config properties specified either
-on the pytest command line or via the usual ini/cfg config files.
-
-- --profiling-mode={stats, callers, callees}; default is 'stats'. Specifies which of the pstats.Stats's
-print_stats(), print_callers(), print_callees() is utilized. Any provided _restrictions_ are used by each
-of these print_ functions. Any value other than 'callers' or 'callees' will be treated as 'stats'.
-- --profiling-sort-key=_{valid-sort-string}_ 1 or more instances of this option will result in the values making up
-an ordered list of sort keys being provided to the Stats.sort_stats() method. In the ini
-configuration, specify the list via a "linelist" property. The default is "cumulative".
-The list of valid values is listed in the
-[sort_stats](https://docs.python.org/3/library/profile.html#pstats.Stats.sort_stats) table.
-- --profiling-rev-order This option causes the ordering of the specified sort keys to be
-reversed, based on the sort keys specified.
-- --profiling-filter=_restriction-value_ - 1 or more of this builds up a ordered list of _restrictions_ as defined in the
-description of the [Stats.print_stats()](https://docs.python.org/3/library/profile.html#pstats.Stats.print_stats) method.
-Note that the values provided to the --profiling-filter option will be converted to a float or
-int or str for usage as documented.
-
-Note that if the ordered list of restrictions result in an empty set of records to be
-printed by SJH
+```bash
+    ./foreach.sh python setup.py bdist_wheel
+```
 
