@@ -16,7 +16,7 @@ Install using your favourite package installer:
     # or
     easy_install pytest-profiling
 ```
-    
+
 Enable the fixture explicitly in your tests or conftest.py (not required when using setuptools entry points):
 
 ```python
@@ -109,3 +109,38 @@ If the ``--profile-svg`` option is given, along with the prof files and tabular 
 ```
 
 This is best viewed with a good svg viewer e.g. Chrome.
+
+A number of [gprof2dot](https://github.com/jrfonseca/gprof2dot) options can be provided by either command line options to pytest or in any of the pytest ini
+files. Any option that has a name with the _gprof2dot__ prefix is conveyed to gprof2dot after removing that prefix.
+Because this plugin uses the gprof2dot _-f pstats_ option, at this time only the following
+gprof2dot options are passed through by this plugin:
+- \-\-gprof2dot-node-thres
+- \-\-gprof2dot-edge-thres
+- \-\-gprof2dot-skew
+- \-\-gprof2dot-colormap
+- \-\-gprof2dot-root
+- \-\-gprof2dot-leaf
+
+Note that if a function name is provided to either the --root or --leaf options and this
+function symbol is not found in the combined.prof file, gprof2dot will
+pipe an empty stream to dot.
+
+### Plugin Options Affecting pstats.Stats
+
+The analysis of the profiling data is done via usage of the
+[profile.Stats](https://docs.python.org/3/library/profile.html#the-stats-class) class.
+This usage can be configured via a couple of config properties specified either
+on the pytest command line or via the usual ini/cfg config files.
+
+- --profiling-sort-key 1 or more instances of this option will result in the values making up
+an ordered list of sort keys being provided to the Stats.sort_stats() method. In the ini
+configuration, specify the list via a "linelist" property. The default is "cumulative".
+- --profiling-rev-order This option causes the ordering of the specified sort keys to be
+reversed, based on the sort keys specified.
+- --profiling-filter - 1 or more of this builds up a ordered list of _restrictions_ as defined in the
+description of the [Stats.print_stats()](https://docs.python.org/3/library/profile.html#pstats.Stats.print_stats) method.
+Note that the values provided to the --profiling-filter option will be converted to a float or
+int or str for usage as documented.
+
+Note that if the ordered list of restrictions result in an empty set of records to be
+printed TODO

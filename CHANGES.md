@@ -1,6 +1,11 @@
 
 ## Changelog
 
+### 1.7.2
+ * pytest-profiling: pass-thru a number of options to invoked gprof2dot
+ * pytest-profiling: take a number of pstats.Stats options via CLI or ini file - see the README
+ * pytest-virtualenv: handle case of installed package not having either egg or setup.py
+### 1.7.1 TBD
 ### 1.7.0
  * All: Support pytest >= 4.0.0
  * All: Support Python 3.7

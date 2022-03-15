@@ -6,19 +6,22 @@ import pytest
 
 from pytest_virtualenv import VirtualEnv
 
+# SJH - Setuptools 52.0.0 removed the easy_install command, not available in the created virtualenv /bin anymore, use pip
+
 
 @pytest.yield_fixture(scope="session")
 def virtualenv():
     with VirtualEnv() as venv:
         test_dir = resource_filename("pytest_profiling", "tests/integration/profile")
 
-        venv.install_package("more-itertools")
+        venv.install_package("more-itertools", installer='pip install')
 
         # Keep pytest version the same as what's running this test to ensure P27 keeps working
-        venv.install_package("pytest=={}".format(get_distribution("pytest").version))
+        venv.install_package("pytest=={}".format(get_distribution("pytest").version), installer='pip install' )
 
-        venv.install_package("pytest-cov")
-        venv.install_package("pytest-profiling")
+        venv.install_package("pytest-cov", installer='pip install')
+        venv.install_package("gprof2dot", installer='pip install')
+        venv.install_package("pytest-profiling", installer='pip install')
         copy_tree(test_dir, venv.workspace)
         shutil.rmtree(
             venv.workspace / "tests" / "unit" / "__pycache__", ignore_errors=True
@@ -40,6 +43,7 @@ def test_profile_generates_svg(pytestconfig, virtualenv):
         ["-m", "pytest", "--profile-svg", "tests/unit/test_example.py"],
         pytestconfig,
         cd=virtualenv.workspace,
+        capture_stderr=True
     )
     assert any(
         [
@@ -67,3 +71,42 @@ def test_profile_chdir(pytestconfig, virtualenv):
         pytestconfig,
         cd=virtualenv.workspace,
     )
+
+
+def test_profile_callers_mode(pytestconfig, virtualenv):
+    output = virtualenv.run_with_coverage(
+        ["-m", "pytest", "--profile", "--profiling-mode=callers", "tests/unit/test_example.py"],
+        pytestconfig,
+        cd=virtualenv.workspace,
+    )
+
+    # default sort key: cumulative
+    assert "test_example.py:1(test_foo)" in output
+    assert "called..." in output
+    assert "Ordered by: cumulative time" in output
+
+
+def test_profile_callees_mode(pytestconfig, virtualenv):
+    output = virtualenv.run_with_coverage(
+        ["-m", "pytest", "--profile", "--profiling-mode=callees", "tests/unit/test_example.py"],
+        pytestconfig,
+        cd=virtualenv.workspace,
+    )
+
+    # default sort key: cumulative
+    assert "test_example.py:1(test_foo)" in output
+    assert "was called by..." in output
+    assert "Ordered by: cumulative time" in output
+
+
+def test_profile_multiple_sort_keys(pytestconfig, virtualenv):
+    output = virtualenv.run_with_coverage(
+        ["-m", "pytest", "--profile", "--profiling-sort-key=file", "--profiling-sort-key=name", "tests/unit/test_example.py"],
+        pytestconfig,
+        cd=virtualenv.workspace,
+    )
+
+    # default sort key: cumulative
+    assert "test_example.py:1(test_foo)" in output
+    assert "Ordered by: file name, function name" in output
+
