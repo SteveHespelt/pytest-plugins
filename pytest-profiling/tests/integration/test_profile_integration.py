@@ -1,4 +1,5 @@
 from distutils.dir_util import copy_tree
+import re
 import shutil
 
 from pkg_resources import resource_filename, get_distribution
@@ -100,8 +101,11 @@ def test_profile_callees_mode(pytestconfig, virtualenv):
 
 
 def test_profile_multiple_sort_keys(pytestconfig, virtualenv):
+    """And because we use the --profiling-filter, we get that function in our output - to assert its presence.
+    """
     output = virtualenv.run_with_coverage(
-        ["-m", "pytest", "--profile", "--profiling-sort-key=file", "--profiling-sort-key=name", "tests/unit/test_example.py"],
+        ["-m", "pytest", "--profile", "--profiling-sort-key=file", "--profiling-sort-key=name",
+         "--profiling-filter=test_foo", "tests/unit/test_example.py"],
         pytestconfig,
         cd=virtualenv.workspace,
     )
@@ -109,4 +113,18 @@ def test_profile_multiple_sort_keys(pytestconfig, virtualenv):
     # default sort key: cumulative
     assert "test_example.py:1(test_foo)" in output
     assert "Ordered by: file name, function name" in output
+
+
+def test_profile_number_elements(pytestconfig, virtualenv):
+    output = virtualenv.run_with_coverage(
+        ["-m", "pytest", "--profile", "--element-number=5", "tests/unit/test_example.py"],
+        pytestconfig,
+        cd=virtualenv.workspace,
+    )
+
+    # default sort key: cumulative
+    assert "Ordered by: cumulative time" in output
+    # List reduced from 56 to 5 due to restriction <5>
+    re_pattern = re.compile('List reduced from [0-9][0-9]* to 5 due to restriction <5>')
+    assert re_pattern.search(output) is not None
 

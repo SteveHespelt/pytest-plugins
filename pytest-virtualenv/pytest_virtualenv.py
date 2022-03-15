@@ -182,6 +182,7 @@ class VirtualEnv(Workspace):
 
         installed = [
             dist for dist in metadata.distributions() if dist.name == pkg_name]
+        # SJH try to add the dist.version to see if it matches the pkg_name (eg. pytest-profiling>=1.72 )
         extra_args = { 'capture': False }
         easy_install = self._update_installer(installer)
         if not installed or str(location(installed[0])).endswith('.egg'):
@@ -215,7 +216,7 @@ class VirtualEnv(Workspace):
                 else:  # TODO: what other choices are there?
                     installer = { 'pip':'-m ' + installer,
                                   'easy_install':installer }.get(installer.split()[0], installer)
-                    cmd = '{0} {1} {2}'.format( d['python'], installer, d['name'] )
+                    cmd = '{0} {1} {2}'.format(d['python'], installer, d['name'])
 
         self.run(cmd, **extra_args)
 

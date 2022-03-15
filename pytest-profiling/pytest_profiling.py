@@ -159,7 +159,9 @@ class Profiling(object):
                 stats = stats.reverse_order()
             restrictions = self.restrictions
             if restrictions is None:
-                restrictions = [self.element_number]
+                restrictions = []
+            if self.element_number is not None:
+                restrictions.append( self.element_number )
             if self.profiling_mode == 'callers':
                 stats.sort_stats(*self.sort_keys).print_callees(*restrictions)
             elif self.profiling_mode == 'callees':
@@ -233,7 +235,7 @@ def pytest_addoption(parser):
                               'filename', 'module', 'ncalls', 'pcalls',
                               'line', 'name', 'nfl', 'stdname', 'time',
                               'tottime'],
-                     default=None, help="ordered list of keys " # None because our ini has our default 
+                     default=None, help="ordered list of keys " # None because our ini has our default
                      "provided to pstats.sort_stats method")
     parser.addini("profiling_sort_key", help="ordered list of keys "
                  "provided to pstats.sort_stats method",
@@ -306,4 +308,4 @@ def pytest_configure(config):
         #SJH - is this right?  the plugin has to explicitly look at both the argv AND ini collectons via
         # getvalue(), getini() ? Shouldn't the Config object encapsulate what actual source is used??
 
-    
+

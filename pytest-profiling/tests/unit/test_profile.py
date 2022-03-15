@@ -172,3 +172,5 @@ def test_cli_configs_set2():
     assert profiling.sort_keys[0] == 'ncalls'
     assert profiling.sort_keys[1] == 'cumulative'
     assert profiling.gprof2dot_options == []
+
+
