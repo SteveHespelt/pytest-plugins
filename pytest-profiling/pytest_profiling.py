@@ -1,5 +1,4 @@
 """pytest: avoid already-imported warning: PYTEST_DONT_REWRITE."""
-# SJH is used to mark stuff I've added, changed
 from __future__ import absolute_import
 
 import sys
@@ -69,10 +68,9 @@ class Profiling(object):
     gprof2dot_options = []
     profiling_mode = 'stats'
 
-    #sjh add the Config object to ctor args
-    def __init__(self, svg: bool, dir=None, element_number=20, stripdirs=False, config: pytest.Config =None):
+    def __init__(self, svg: bool, dir=None, element_number=20, stripdirs=False, config: pytest.Config = None):
         self.svg = svg
-        self.dir = 'prof' if dir is None else dir[0]  # nargs=1 on the group.addoption() call -> a list if present, else None
+        self.dir = 'prof' if dir is None else dir[0]  # because of nargs=1 below
         self.stripdirs = stripdirs
         self.element_number = element_number
         self.profs = []
@@ -116,34 +114,23 @@ class Profiling(object):
                 # gprof2dot -f pstats prof/combined.prof | dot -Tsvg -o prof/combined.svg
 
                 # the 2 commands that we wish to execute
-                #SJH - add config profiled args
-                #gprof2dot_args = [self.gprof2dot, "-f", "pstats", *self.gprof2dot_options, self.combined]
-                gprof2dot_args = [sys.executable, '-m', 'gprof2dot', "-f", "pstats", *self.gprof2dot_options, self.combined]
+                gprof2dot_args = [sys.executable, '-m', 'gprof2dot', "-f", "pstats",
+                                  *self.gprof2dot_options, self.combined]
                 dot_args = ["dot", "-Tsvg", "-o", self.svg_name]
                 self.dot_cmd = " ".join(dot_args)
                 self.gprof2dot_cmd = " ".join(gprof2dot_args)
 
-                #SJH - since we cannot attach the Pycharm debugger to a shell subprocess, let's do this pipeline by
-                # running the gprof2dot module first, then the dot  command.
-
                 # A handcrafted Popen pipe actually seems to work on both windows and unix:
                 # do it in 2 subprocesses, with a pipe in between
-                # SJH - cannot follow into child processes when debugging in Pycharm CE
-                # so lots of print statements...
-                print(' grpof2dot pipe CWD is ' + os.getcwd(), file=sys.stderr )
-                pdot = Popen(dot_args, stdin=PIPE, stdout=None, stderr=None, shell=False)
-                pgprof = Popen(gprof2dot_args, stdout=pdot.stdin, stderr=None, shell=False)
+                pdot = Popen(dot_args, stdin=PIPE, shell=False)  #  dot is not a shell script, even if it were
+                pgprof = Popen(gprof2dot_args, stdout=pdot.stdin, shell=False) # no shell as we are using sys.executable
                 (stdoutdata1, stderrdata1) = pgprof.communicate()
                 (stdoutdata2, stderrdata2) = pdot.communicate()
                 if stderrdata1 is not None or pgprof.poll() > 0:
                     # error: gprof2dot
-                    print('gprof2dot error: ' + str(stderrdata1), file=sys.stderr )
-                    print('gprof2dot stdout: ' + str(stdoutdata1), file=sys.stderr )
                     self.svg_err = 1
                 elif stderrdata2 is not None or pdot.poll() > 0:
                     # error: dot
-                    print('dot error: ' + str(stderrdata2), file=sys.stderr )
-                    print('dot stdout: ' + str(stderrdata1), file=sys.stderr )
                     self.svg_err = 2
                 else:
                     # success
@@ -216,7 +203,7 @@ def pytest_addoption(parser):
                     help="generate profiling information")
     group.addoption("--profile-svg", action="store_true",
                     help="generate profiling graph (using gprof2dot and dot -Tsvg)")
-    group.addoption("--pstats-dir", nargs=1,  # TODO:  why nargs=1 -> a list returned by getvalue()
+    group.addoption("--pstats-dir", nargs=1,  # if none provided, empty list returned?
                     help="configure the dump directory of profile data files")
     group.addoption("--element-number", action="store", type="int", default=20,
                     help="defines how many elements will display in a result")
@@ -225,33 +212,30 @@ def pytest_addoption(parser):
                     "from file names")
     parser.addini("strip_dirs", help="configure to show/hide the leading path information "
                     "from file names", type="bool", default=False)
-    #SJH restriction args for use by pstats methods when doing terminal print
+    # Stats.print_stats(), restriction args for use by pstats methods when doing terminal print
     #   multiple entries (multi-line ini or > 1 CLI arg
     group.addoption("--profiling-mode", type=str, choices=['stats', 'callers', 'callees'],default=None,
                     help="which Stats.print_? function to use")
-    parser.addini("profiling_mode", help="which Stats.print_? function to use", default='stats' )
+    parser.addini("profiling_mode", help="which Stats.print_? function to use", default='stats')
     group.addoption("--profiling-sort-key", action="append", type=str,
-                     choices=['cumulative', 'calls', 'cumtime', 'file',
-                              'filename', 'module', 'ncalls', 'pcalls',
-                              'line', 'name', 'nfl', 'stdname', 'time',
-                              'tottime'],
-                     default=None, help="ordered list of keys " # None because our ini has our default
-                     "provided to pstats.sort_stats method")
-    parser.addini("profiling_sort_key", help="ordered list of keys "
-                 "provided to pstats.sort_stats method",
-                 type="linelist", default=["cumulative"] )
+                    choices=['cumulative', 'calls', 'cumtime', 'file',
+                             'filename', 'module', 'ncalls', 'pcalls',
+                             'line', 'name', 'nfl', 'stdname', 'time',
+                             'tottime'],
+                    default=None, help="ordered list of keys " # None because our ini has our default
+                    "provided to pstats.sort_stats method")
+    parser.addini("profiling_sort_key", help="ordered list of keys provided to pstats.sort_stats method",
+                  type="linelist", default=["cumulative"])
     group.addoption("--profiling-rev-order", action="store_true",
                     default=None,  # if no command line, as our ini has a default
                     help="if specified, pstats.reverse_order() utilized")
-    parser.addini("profiling_rev_order", help="if specified, "
-                 "pstats.reverse_order() utilized", type="bool", default=False )
+    parser.addini("profiling_rev_order", help="if specified, pstats.reverse_order() utilized",
+                  type="bool", default=False)
     # these are the restrictions that various pstats methods can utilize
     # no point using a custom type conversion function as the pstats restrictions can be strings, ints, floats here
     # as there isn't one for the addini(), we will use it when we grab the values.
-    group.addoption("--profiling-filter", action="append",
-                     type=str, default=None, help="pstats restriction values")
-    parser.addini("profiling_filter", help="pstats restriction values",
-                     type="linelist", default=[] )
+    group.addoption("--profiling-filter", action="append", type=str, default=None, help="pstats restriction values")
+    parser.addini("profiling_filter", help="pstats restriction values", type="linelist", default=[])
 
     # new grprof2dot options - as we are passing these through to the gprof2dot command, we treat all such
     # options as strings - let gprof2dot parse as needed.
@@ -260,37 +244,31 @@ def pytest_addoption(parser):
     group.addoption("--gprof2dot-node-thres", action="store", type=float,
                      default=None, help="eliminate nodes below this threshold")
     parser.addini("gprof2dot_node_thres", help="eliminate nodes below this "
-                 "threshold", type="string", default="0.5")
+                  "threshold", type="string", default="0.5")
     group.addoption("--gprof2dot-edge-thres", action="store", type=float,
-                     default=None, help="eliminate edges below this threshold")
-    parser.addini("gprof2dot_edge_thres", help="eliminate nodesedges below this "
-                 "threshold", type="string", default="0.1")
+                    default=None, help="eliminate edges below this threshold")
+    parser.addini("gprof2dot_edge_thres", help="eliminate edges below this threshold", type="string", default="0.1")
     group.addoption("--gprof2dot-skew", action="store", type=float,
-                     default=None, help="skew the colorization curve.  Values "
-                     "< 1.0 give more\nvariety to lower percentages.  Values "
-                     "> 1.0 give less\nvariety to lower percentages")
+                    default=None, help="skew the colorization curve.  Values "
+                    "< 1.0 give more\nvariety to lower percentages.  Values "
+                    "> 1.0 give less\nvariety to lower percentages")
     parser.addini("gprof2dot_skew", help="skew the colorization curve.  Values "
                  "< 1.0 give more\nvariety to lower percentages.  Values "
                  "> 1.0 give less\nvariety to lower percentages",
                  type="string", default="1.0" )
-    group.addoption("--gprof2dot-colormap", action="store", type=str,
-                     default=None,
-                     choices=['color', 'pink', 'gray', 'bw', 'print'],
-                     help="color map: color, pink, gray, bw, or print" )
-    parser.addini("gprof2dot_colormap", help="color map: color, pink, gray, "
-                 "bw, or print", type="string", default="color" )
-    group.addoption("--gprof2dot-root", action="store", type=str,
-                     default=None, help="prune call graph to show only "
-                    "descendants of specified root function")
-    parser.addini("gprof2dot_root", help="prune call graph to show only "
-                 "descendants of specified root function",
-                 type="string", default=None )
-    group.addoption("--gprof2dot-leaf", action="store", type=str,
-                     default=None, help="prune call graph to show only "
-                     "ancestors of specified leaf function")
-    parser.addini("gprof2dot_leaf", help="prune call graph to show only "
-                 "ancestors of specified leaf function",
-                 type="string", default=None )
+    group.addoption("--gprof2dot-colormap", action="store", type=str, default=None,
+                    choices=['color', 'pink', 'gray', 'bw', 'print'],
+                    help="color map: color, pink, gray, bw, or print")
+    parser.addini("gprof2dot_colormap", help="color map: color, pink, gray, bw, or print", type="string",
+                  default="color")
+    group.addoption("--gprof2dot-root", action="store", type=str, default=None,
+                    help="prune call graph to show only descendants of specified root function")
+    parser.addini("gprof2dot_root", help="prune call graph to show only descendants of specified root function",
+                  type="string", default=None)
+    group.addoption("--gprof2dot-leaf", action="store", type=str, default=None,
+                    help="prune call graph to show only ancestors of specified leaf function")
+    parser.addini("gprof2dot_leaf", help="prune call graph to show only ancestors of specified leaf function",
+                  type="string", default=None)
 
 
 def pytest_configure(config):
@@ -304,8 +282,6 @@ def pytest_configure(config):
                                                 config.getvalue('pstats_dir'),
                                                 element_number=config.getvalue('element_number'),
                                                 stripdirs=stripdirs,
-                                                config=config)) #SJH
-        #SJH - is this right?  the plugin has to explicitly look at both the argv AND ini collectons via
-        # getvalue(), getini() ? Shouldn't the Config object encapsulate what actual source is used??
+                                                config=config))
 
 

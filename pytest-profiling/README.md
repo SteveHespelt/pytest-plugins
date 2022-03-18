@@ -135,12 +135,13 @@ on the pytest command line or via the usual ini/cfg config files.
 - --profiling-sort-key 1 or more instances of this option will result in the values making up
 an ordered list of sort keys being provided to the Stats.sort_stats() method. In the ini
 configuration, specify the list via a "linelist" property. The default is "cumulative".
-- --profiling-rev-order This option causes the ordering of the specified sort keys to be
+- --profiling-rev-order This option causes the ordering of the resulting Stats list specified sort keys to be
 reversed, based on the sort keys specified.
-- --profiling-filter - 1 or more of this builds up a ordered list of _restrictions_ as defined in the
+- --profiling-filter - 1 or more of this option builds up a ordered list of _restrictions_ as defined in the
 description of the [Stats.print_stats()](https://docs.python.org/3/library/profile.html#pstats.Stats.print_stats) method.
 Note that the values provided to the --profiling-filter option will be converted to a float or
 int or str for usage as documented.
 
 Note that if the ordered list of restrictions result in an empty set of records to be
-printed TODO
+printed, this should not affect any SVG generation as that process is somewhat independent
+of the stdout listing (the restrictions, sort, etc. are not utilized by the SVG generation)
