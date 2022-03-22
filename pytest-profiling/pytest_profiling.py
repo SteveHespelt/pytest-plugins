@@ -205,37 +205,38 @@ def pytest_addoption(parser):
                     help="generate profiling graph (using gprof2dot and dot -Tsvg)")
     group.addoption("--pstats-dir", nargs=1,  # if none provided, empty list returned?
                     help="configure the dump directory of profile data files")
-    group.addoption("--element-number", action="store", type="int", default=20,
+    group.addoption("--element-number", "--profiling-element-number", dest="element_number", action="store",
+                    type="int", default=20,
                     help="defines how many elements will display in a result")
-    group.addoption("--strip-dirs", action="store_true", default=None,
+    group.addoption("--strip-dirs", "--profiling-strip-dirs", dest="strip_dirs", action="store_true", default=None,
                     help="configure to show/hide the leading path information "
                     "from file names")
     parser.addini("strip_dirs", help="configure to show/hide the leading path information "
                     "from file names", type="bool", default=False)
-    # Stats.print_stats(), restriction args for use by pstats methods when doing terminal print
+    # Stats.print_stats(), restriction args for use by pstats.Stats methods when doing terminal print
     #   multiple entries (multi-line ini or > 1 CLI arg
-    group.addoption("--profiling-mode", type=str, choices=['stats', 'callers', 'callees'],default=None,
-                    help="which Stats.print_? function to use")
-    parser.addini("profiling_mode", help="which Stats.print_? function to use", default='stats')
+    group.addoption("--profiling-mode", type=str, choices=['stats', 'callers', 'callees'], default=None,
+                    help="which pstats.Stats.print_? function to use")
+    parser.addini("profiling_mode", help="which pstats.Stats.print_? function to use", default='stats')
     group.addoption("--profiling-sort-key", action="append", type=str,
                     choices=['cumulative', 'calls', 'cumtime', 'file',
                              'filename', 'module', 'ncalls', 'pcalls',
                              'line', 'name', 'nfl', 'stdname', 'time',
                              'tottime'],
                     default=None, help="ordered list of keys " # None because our ini has our default
-                    "provided to pstats.sort_stats method")
-    parser.addini("profiling_sort_key", help="ordered list of keys provided to pstats.sort_stats method",
+                    "provided to pstats.Stats.sort_stats method")
+    parser.addini("profiling_sort_key", help="ordered list of keys provided to pstats.Stats.sort_stats method",
                   type="linelist", default=["cumulative"])
     group.addoption("--profiling-rev-order", action="store_true",
                     default=None,  # if no command line, as our ini has a default
-                    help="if specified, pstats.reverse_order() utilized")
-    parser.addini("profiling_rev_order", help="if specified, pstats.reverse_order() utilized",
+                    help="if specified, pstats.Stats.reverse_order() utilized")
+    parser.addini("profiling_rev_order", help="if specified, pstats.Stats.reverse_order() utilized",
                   type="bool", default=False)
-    # these are the restrictions that various pstats methods can utilize
-    # no point using a custom type conversion function as the pstats restrictions can be strings, ints, floats here
+    # these are the restrictions that various pstats.Stats methods can utilize
+    # no point using a custom type conversion function as the pstats.Stats restrictions can be strings, ints, floats
     # as there isn't one for the addini(), we will use it when we grab the values.
-    group.addoption("--profiling-filter", action="append", type=str, default=None, help="pstats restriction values")
-    parser.addini("profiling_filter", help="pstats restriction values", type="linelist", default=[])
+    group.addoption("--profiling-filter", action="append", type=str, default=None, help="pstats.Stats restriction values")
+    parser.addini("profiling_filter", help="pstats.Stats restriction values", type="linelist", default=[])
 
     # new grprof2dot options - as we are passing these through to the gprof2dot command, we treat all such
     # options as strings - let gprof2dot parse as needed.
