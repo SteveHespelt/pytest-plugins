@@ -1,4 +1,6 @@
+import tempfile
 from distutils.dir_util import copy_tree
+import os
 import re
 import shutil
 
@@ -21,7 +23,8 @@ if the package name begins with "install ", installer is 'pip' then:
 """
 
 
-@pytest.yield_fixture(scope="session")
+#@pytest.yield_fixture(scope="session")
+@pytest.fixture(scope="session")
 def virtualenv():
     with VirtualEnv() as venv:
         test_dir = resource_filename("pytest_profiling", "tests/integration/profile")
@@ -33,7 +36,8 @@ def virtualenv():
 
         venv.install_package("install pytest-cov", installer='pip')
         venv.install_package("install gprof2dot", installer='pip')
-        venv.install_package("install 'pytest-profiling>1.7.1'", installer='pip')  # TODO: SJH - should fail with > 1.7.5
+        # TODO: specify 1.7.5 to force a failure, as of today the current version is 1.7.2 when built locally
+        venv.install_package("install 'pytest-profiling>1.7.1'", installer='pip')
         copy_tree(test_dir, venv.workspace)
         shutil.rmtree(
             venv.workspace / "tests" / "unit" / "__pycache__", ignore_errors=True
@@ -137,5 +141,25 @@ def test_profile_number_elements(pytestconfig, virtualenv):
     assert "Ordered by: cumulative time" in output
     # List reduced from 56 to 5 due to restriction <5>
     re_pattern = re.compile('List reduced from [0-9][0-9]* to 5 due to restriction <5>')
+    assert re_pattern.search(output) is not None
+
+def test_profile_number_elements_in_output(pytestconfig, virtualenv):
+    tfile, fname = tempfile.mkstemp('.tmp')
+    os.close(tfile)
+    print("running test test_profile_number_elements_in_output with temp file: {}".format(fname))
+    print("deleted post-test")
+    output = virtualenv.run_with_coverage(
+        ["-m", "pytest", "--profile", "--element-number=4", "--profiling-output-file={}".format(fname),
+         "tests/unit/test_example.py"],
+        pytestconfig,
+        cd=virtualenv.workspace,
+    )
+    fp = open( fname )
+    output = fp.read(-1)
+    os.unlink( fname )
+    # default sort key: cumulative
+    assert "Ordered by: cumulative time" in output
+    # List reduced from 56 to 5 due to restriction <5>
+    re_pattern = re.compile('List reduced from [0-9][0-9]* to 4 due to restriction <4>')
     assert re_pattern.search(output) is not None
 

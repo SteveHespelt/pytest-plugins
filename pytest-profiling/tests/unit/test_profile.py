@@ -34,13 +34,18 @@ def test_combines_profs():
 
 
 def test_generates_svg():
+    """ we're not testing that gprof2dot actually worked, just that it was going to be called by Popen.communicate().
+    Integration tests are for checking if full functionality with integrated components (eg. gprof2dot) actually work.
+    """
     plugin = Profiling(True)
     plugin.profs = [sentinel.prof]
     with patch('pstats.Stats'):
-        with patch('pipes.Template') as Template:
-            plugin.pytest_sessionfinish(Mock(), Mock())
-    assert any('gprof2dot' in args[0][0] for args in Template.return_value.append.call_args_list)
-    assert Template.return_value.copy.called
+        plugin.pytest_sessionfinish(Mock(), Mock())
+    assert '-m gprof2dot' in plugin.gprof2dot_cmd
+    assert plugin.svg_name is not None
+    #assert any('gprof2dot' in args[0][0] for args in Template.return_value.append.call_args_list)
+    #assert Template.return_value.copy.called
+    # if we want to check, we can use: assert plugin.svg_err == 0
 
 
 def test_writes_summary():
@@ -59,8 +64,7 @@ def test_writes_summary_svg():
     plugin.profs = [sentinel.prof]
     terminalreporter = Mock()
     with patch('pstats.Stats'):
-        with patch('pipes.Template'):
-            plugin.pytest_sessionfinish(Mock(), Mock())
+        plugin.pytest_sessionfinish(Mock(), Mock())
         plugin.pytest_terminal_summary(terminalreporter)
     assert 'SVG' in terminalreporter.write.call_args[0][0]
 

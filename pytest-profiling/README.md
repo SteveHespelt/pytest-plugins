@@ -145,3 +145,19 @@ int or str for usage as documented.
 Note that if the ordered list of restrictions result in an empty set of records to be
 printed, this should not affect any SVG generation as that process is somewhat independent
 of the stdout listing (the restrictions, sort, etc. are not utilized by the SVG generation)
+
+### Issues
+
+As of 2022-03-22, the use of the pytest-virtualenv plugin by the integration tests
+requires a bit of a hack when using setuptools>=52.0.0. The lack of easy_install
+means I chanced the virtualenv setup function to use pip as the installer. This
+required the hack by which the pkg_name argument to VirtualEnv.install_package is
+prefixed by the install command (for pip) and potentially followed by any version
+specifiers (be sure these are in single quotes as the constructed command is eventually
+used by Workspace.run() and is passed to the platform's shell - so metachars like > will be
+used by the shell & not passed through to the Python code dealing with pip version
+specifiers). This means that pkg_name values that won't match an installed (develop mode)
+package will be installed by pip install. This breaks the copy of the integration test
+files - copying this tree prior to running pytest will enable the tests to succeed.
+
+How to do this in a CI/CD pipeline? Without including these in the wheel? (test only files)

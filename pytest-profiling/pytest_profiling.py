@@ -11,6 +11,7 @@ from subprocess import Popen, PIPE
 
 import six
 import pytest
+from _pytest._io import TerminalWriter
 
 LARGE_FILENAME_HASH_LEN = 8
 
@@ -67,6 +68,7 @@ class Profiling(object):
     restrictions = []
     gprof2dot_options = []
     profiling_mode = 'stats'
+    output_file = None
 
     def __init__(self, svg: bool, dir=None, element_number=20, stripdirs=False, config: pytest.Config = None):
         self.svg = svg
@@ -93,6 +95,9 @@ class Profiling(object):
             mode = config.getvalue('profiling_mode')
             mode = config.getini('profiling_mode') if mode is None else mode
             self.profiling_mode = mode if mode is not None else self.profiling_mode
+            fname: str = config.getvalue('output_file')
+            fname = config.getini('profiling_output_file') if fname is None else fname
+            self.output_file = fname if fname is not None else self.output_file  # whatever our class level default is
 
     def pytest_sessionstart(self, session):  # @UnusedVariable
         try:
@@ -137,39 +142,54 @@ class Profiling(object):
                     self.svg_err = 0
 
     def pytest_terminal_summary(self, terminalreporter):
-        if self.combined:
-            terminalreporter.write("Profiling (from {prof}):\n".format(prof=self.combined))
-            stats = pstats.Stats(self.combined, stream=terminalreporter)
-            if self.stripdirs:
-              stats.strip_dirs()
-            if self.rev_order:
-                stats = stats.reverse_order()
-            restrictions = self.restrictions
-            if restrictions is None:
-                restrictions = []
-            if self.element_number is not None:
-                restrictions.append( self.element_number )
-            if self.profiling_mode == 'callers':
-                stats.sort_stats(*self.sort_keys).print_callees(*restrictions)
-            elif self.profiling_mode == 'callees':
-                stats.sort_stats(*self.sort_keys).print_callers(*restrictions)
-            else:
-                stats.sort_stats(*self.sort_keys).print_stats(*restrictions)
-        if self.svg_name:
-            if not self.svg_err:
-                # 0 - SUCCESS
-                terminalreporter.write("SVG profile created in {svg}.\n".format(svg=self.svg_name))
-            else:
-                if self.svg_err == 1:
-                    # 1 - GPROF2DOT ERROR
-                    terminalreporter.write("Error creating SVG profile in {svg}.\n"
-                                           "Command failed: {cmd}".format(svg=self.svg_name, cmd=self.gprof2dot_cmd))
-                elif self.svg_err == 2:
-                    # 2 - DOT ERROR
-                    terminalreporter.write("Error creating SVG profile in {svg}.\n"
-                                           "Command succeeded: {cmd} \n"
-                                           "Command failed: {cmd2}".format(svg=self.svg_name, cmd=self.gprof2dot_cmd,
-                                                                           cmd2=self.dot_cmd))
+        our_tw, prior_tw = None, terminalreporter._tw
+        if self.output_file is not None:
+            try:
+                our_tw = TerminalWriter( file=open(self.output_file, "w"))
+                terminalreporter._tw = our_tw
+            except Exception as e:
+                terminalreporter.write('Unable to use profiling-output-file: {}. Reason:'.format(self.output_file,
+                                                                                                 str(e)))
+        try:
+            if self.combined:
+                terminalreporter.write("Profiling (from {prof}):\n".format(prof=self.combined))
+                stats = pstats.Stats(self.combined, stream=terminalreporter)
+                if self.stripdirs:
+                  stats.strip_dirs()
+                if self.rev_order:
+                    stats = stats.reverse_order()
+                restrictions = self.restrictions
+                if restrictions is None:
+                    restrictions = []
+                if self.element_number is not None:
+                    restrictions.append( self.element_number )
+                # TODO: maybe provide --profiling-output-filename option, temporarily set the os.stdout to this file ?
+                # The TerminalReport object has its ctor using:  _tw = _pytest.config.create_terminal_writer(config, file)
+                # checkout create_terminal_writer() defined in _pytest/config/__init__.py for tw options from the config
+                if self.profiling_mode == 'callers':
+                    stats.sort_stats(*self.sort_keys).print_callees(*restrictions)
+                elif self.profiling_mode == 'callees':
+                    stats.sort_stats(*self.sort_keys).print_callers(*restrictions)
+                else:
+                    stats.sort_stats(*self.sort_keys).print_stats(*restrictions)
+            if self.svg_name:
+                if not self.svg_err:
+                    # 0 - SUCCESS
+                    terminalreporter.write("SVG profile created in {svg}.\n".format(svg=self.svg_name))
+                else:
+                    if self.svg_err == 1:
+                        # 1 - GPROF2DOT ERROR
+                        terminalreporter.write("Error creating SVG profile in {svg}.\n"
+                                               "Command failed: {cmd}".format(svg=self.svg_name, cmd=self.gprof2dot_cmd))
+                    elif self.svg_err == 2:
+                        # 2 - DOT ERROR
+                        terminalreporter.write("Error creating SVG profile in {svg}.\n"
+                                               "Command succeeded: {cmd} \n"
+                                               "Command failed: {cmd2}".format(svg=self.svg_name, cmd=self.gprof2dot_cmd,
+                                                                               cmd2=self.dot_cmd))
+        finally:
+            terminalreporter.flush()
+            terminalreporter._tw = prior_tw
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item, nextitem):
@@ -213,11 +233,26 @@ def pytest_addoption(parser):
                     "from file names")
     parser.addini("strip_dirs", help="configure to show/hide the leading path information "
                     "from file names", type="bool", default=False)
-    # Stats.print_stats(), restriction args for use by pstats.Stats methods when doing terminal print
-    #   multiple entries (multi-line ini or > 1 CLI arg
+    # these are the restrictions that various pstats.Stats methods can utilize
+    # no point using a custom type conversion function as the pstats.Stats restrictions can be strings, ints, floats
+    # as there isn't one for the addini(), we will use it when we grab the values.
+    group.addoption("--profiling-filter", action="append", type=str, default=None, help="pstats.Stats restriction values")
+    parser.addini("profiling_filter", help="pstats.Stats restriction values", type="linelist", default=[])
+
     group.addoption("--profiling-mode", type=str, choices=['stats', 'callers', 'callees'], default=None,
                     help="which pstats.Stats.print_? function to use")
     parser.addini("profiling_mode", help="which pstats.Stats.print_? function to use", default='stats')
+
+    # optional profiling output sink
+    group.addoption("--profiling-output-file", type=str, dest='output_file', default=None, help='output file name')
+    parser.addini("profiling_output_file", help="output file name", default=None)
+
+    group.addoption("--profiling-rev-order", action="store_true",
+                    default=None,  # if no command line, as our ini has a default
+                    help="if specified, pstats.Stats.reverse_order() utilized")
+    parser.addini("profiling_rev_order", help="if specified, pstats.Stats.reverse_order() utilized",
+                  type="bool", default=False)
+
     group.addoption("--profiling-sort-key", action="append", type=str,
                     choices=['cumulative', 'calls', 'cumtime', 'file',
                              'filename', 'module', 'ncalls', 'pcalls',
@@ -227,16 +262,6 @@ def pytest_addoption(parser):
                     "provided to pstats.Stats.sort_stats method")
     parser.addini("profiling_sort_key", help="ordered list of keys provided to pstats.Stats.sort_stats method",
                   type="linelist", default=["cumulative"])
-    group.addoption("--profiling-rev-order", action="store_true",
-                    default=None,  # if no command line, as our ini has a default
-                    help="if specified, pstats.Stats.reverse_order() utilized")
-    parser.addini("profiling_rev_order", help="if specified, pstats.Stats.reverse_order() utilized",
-                  type="bool", default=False)
-    # these are the restrictions that various pstats.Stats methods can utilize
-    # no point using a custom type conversion function as the pstats.Stats restrictions can be strings, ints, floats
-    # as there isn't one for the addini(), we will use it when we grab the values.
-    group.addoption("--profiling-filter", action="append", type=str, default=None, help="pstats.Stats restriction values")
-    parser.addini("profiling_filter", help="pstats.Stats restriction values", type="linelist", default=[])
 
     # new grprof2dot options - as we are passing these through to the gprof2dot command, we treat all such
     # options as strings - let gprof2dot parse as needed.

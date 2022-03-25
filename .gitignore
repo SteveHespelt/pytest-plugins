@@ -37,12 +37,12 @@ TAGS
 *.swp
 .vscode
 
-# Copied files
-*/MANIFEST.in
-*/CHANGES.md
-*/VERSION
-*/LICENSE
-*/common_setup.py
+# not anymore (were Copied files)
+#*/MANIFEST.in
+#*/CHANGES.md
+#*/VERSION
+#*/LICENSE
+#*/common_setup.py
 /pyqt
 /sip
 
